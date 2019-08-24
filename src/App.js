@@ -4,6 +4,8 @@ import Box from '3box'
 import './App.css'
 const ethUtil = require('ethereumjs-util')
 
+window.box = Box
+
 const shasum = (data, alg) => {
   return crypto
     .createHash(alg || 'sha256')
@@ -35,10 +37,8 @@ class MetamaskHelper {
 
 let metamaskHelper = new MetamaskHelper(window.web3)
 
-const spaceName = 'aGoodSpace'
-const threadName = 'testThread1'
-const firstModerator = '0x94ef30282bebc97226baf5bd3a94bb835fcc4bac'
-const membersThread = false
+const spaceName = 'repootation'
+const threadAddress = '/orbitdb/zdpuB2LPhjwYjDWaCQvBkXuLorUTACQVdh8wxWMYopcw61DyY/3box.thread.repootation.'
 class Storage {
   constructor(){
 
@@ -49,14 +49,17 @@ class Storage {
     const ethereumProvider = window.ethereum
 
     const box = await Box.openBox(myAddress, ethereumProvider)
-
-    // open space for threads
-    const space = await box.openSpace(spaceName)
-    const thread = await space.joinThread(threadName)
-    this.thread = thread
+    this.box = box
   }
-  async addPost(message){
-    await this.thread.post(message)
+  async getThread(threadName){
+    // open space for threads
+    const space = await this.box.openSpace(spaceName)
+    // const thread = await space.joinThread(threadName)
+    const thread = await space.joinThreadByAddress(threadAddress+threadName)
+    return thread
+  }
+  async addPost(message, thread){
+    return thread.post(message)
   }
   async deletePosts(){
     const posts = this.thread.getPosts()
@@ -70,12 +73,30 @@ class Storage {
     const result = await this.thread.deletePost(post.postId)
     console.log('result', result)
   }
-  async getPosts(){
-
+  async getPosts(thread){
+    return thread.getPosts()
   }
 } 
 
 const storage = new Storage()
+
+const persistReaction = async (contentHash, reaction) => { 
+  const thread = await storage.getThread(contentHash)
+  const result = await storage.addPost(reaction, thread)
+  console.log('save reaction to thread', result)
+}
+
+const recoverAddress = (message, signature) => {
+  const msgBuffer = ethUtil.toBuffer(message);
+  const msgHash = ethUtil.hashPersonalMessage(msgBuffer);
+  const signatureBuffer = ethUtil.toBuffer(signature);
+  const signatureParams = ethUtil.fromRpcSig(signatureBuffer)
+  const { v, r, s} = signatureParams
+  const publicKey = ethUtil.ecrecover(msgHash, v, r, s);
+  const addressBuffer = ethUtil.publicToAddress(publicKey);
+  const address = ethUtil.bufferToHex(addressBuffer);
+  return address
+}
 
 const typeToEmoji = (type) => {
   const emojis = {
@@ -104,7 +125,9 @@ class Repoomoji extends Component {
       const signedStatement = `${statement}${SEPARATOR}${signature}`
       console.log('received signature', signedStatement)
       // persist signed statement
-      await storage.addPost(signedStatement)
+      // await storage.addPost(signedStatement)
+      await persistReaction(hash, signedStatement)
+      this.props.onSuccess()
     } catch (error) {
       console.log('error', error)
     }
@@ -131,24 +154,18 @@ const HashPreview = (props) => <div>Digest: {shasum(props.doc)}</div>
 const Reaction = (props) => {
   const {reaction} = props
   const {postId, message, timestamp} = reaction
-  const parts = reaction.message.split(SEPARATOR)
-  if(parts.length === 1){
-    return <div onClick={() => storage.deletePost(reaction)}>{message}</div>
-  }
+  const parts = message.split(SEPARATOR)
   const contentHash = parts[0]
   const rel = parts[1]
   const signature = parts[2]
-
-  const msgBuffer = ethUtil.toBuffer(contentHash);
-  const msgHash = ethUtil.hashPersonalMessage(msgBuffer);
-  const signatureBuffer = ethUtil.toBuffer(signature);
-  const signatureParams = ethUtil.fromRpcSig(signatureBuffer)
-  const { v, r, s} = signatureParams
-  const publicKey = ethUtil.ecrecover(msgHash, v, r, s);
-  const addressBuffer = ethUtil.publicToAddress(publicKey);
-  const address = ethUtil.bufferToHex(addressBuffer);
+  /*
+  if(parts.length === 1){
+    return <div onClick={() => storage.deletePost(reaction)}>{message}</div>
+  }
+  */
+  const address = recoverAddress(`${contentHash}${SEPARATOR}${rel}`, signature)
   return (
-    <div>0x{address} reacted with {typeToEmoji(rel)}</div>
+    <div>{address} reacted with {typeToEmoji(rel)} - valid: {reaction.hasPenalty ? '❌' : '✅'}</div>
   )
 }
 
@@ -160,43 +177,60 @@ class EmojiBar extends Component {
   componentWillReceiveProps(nextProps){
     const { content } = nextProps
     const hash = shasum(content)
-    console.log('component will receive new props', content)
     this.fetchReactions(hash)
   }
-  async componentDidMount(){
-    await storage.init()
+  async componentDidMount(){    
     // this.setState({ready: true})
-    const { content } = this.props
-    const hash = shasum(content)
-    this.fetchReactions(hash)
+    this.reload()
   }
   fetchReactions = async contentHash => {
     // const data = await new Promise((resolve, reject) => box.onSyncDone(resolve))
     // console.log('data', data)
-
-    let threadName = 'bla'
-    if (contentHash === '43cf8caa5b7fee2656c424a4a3da040a6879950d9884bd16550fc73278a534c5'){
-      threadName = 'testThread1'
+    let posts = []
+    if(contentHash){
+      await storage.init()
+      const thread = await storage.getThread(contentHash)
+      posts = await storage.getPosts(thread)
     }
 
-    const posts = await Box.getThread(spaceName, threadName, firstModerator, membersThread)
     console.log('posts for', contentHash, posts)
     // await Storage.deletePosts(thread)
 
+    // prevent voter from multiple votes
+    let voters = {}
+
+    let score = 0
     const counts = {}
     posts.forEach(p => {
       const { message } = p
       const parts = message.split(SEPARATOR)
       const type = parts[1]
+      const signature = parts[2]
+      const address = recoverAddress(`${contentHash}${SEPARATOR}${type}`, signature)
+
+      // init counter
       if (!counts[type]){
         counts[type] = 0
       }
-      counts[type]++
+
+      if(!voters[address]){
+        voters[address] = true
+        switch(type){
+          case 'heart': score+=2; break;
+          case 'like': score+=1; break;
+          case 'dislike': score-=1; break;
+          case 'poop': score-=2; break;
+        }
+        counts[type]++
+      }else{
+        p.hasPenalty = true
+      }
     })
 
     this.setState({
       reactions: posts,
-      reactionCounts: counts
+      reactionCounts: counts,
+      score
     })
 
     console.log('done')
@@ -207,15 +241,21 @@ class EmojiBar extends Component {
       reactions.map(reaction => <Reaction reaction={reaction} key={reaction.postId}/>)
     )
   }
+  reload = () => {
+    const { content } = this.props
+    const contentHash = shasum(content)
+    this.fetchReactions(contentHash)
+  }
   render() {
     const { content } = this.props
-    const { reactionCounts } = this.state
+    const { reactionCounts, score } = this.state
     const showSingleReactions = true
     return (
       <div>
         {
-          SUPPORTED_REACTIONS.map(r => <Repoomoji type={r} doc={content} counter={reactionCounts[r] || 0} />)
+          SUPPORTED_REACTIONS.map(r => <Repoomoji type={r} onSuccess={this.reload} doc={content} counter={reactionCounts[r] || 0} />)
         }
+       <div>Score: {score}</div>
        {showSingleReactions && <h2>Reactions</h2>}
        {showSingleReactions && this.renderReactions()}
       </div>
@@ -226,30 +266,78 @@ class EmojiBar extends Component {
 
 export default class App extends Component {
   state = {
-    doc: 'Lorem ipsum dolor sit amet consectetur adipisicing elit. Voluptatibus fugiat ullam nemo a illum expedita facilis, quisquam non similique et vel architecto quasi optio assumenda odio modi, reprehenderit aliquid officia.',
+    doc2: 'Lorem ipsum dolor sit amet consectetur adipisicing elit. Voluptatibus fugiat ullam nemo a illum expedita facilis, quisquam non similique et vel architecto quasi optio assumenda odio modi, reprehenderit aliquid officia.',
+    doc: `
+    pragma solidity ^0.5.0;
+
+    /**
+     * @dev Standard math utilities missing in the Solidity language.
+     */
+    library Math {
+        /**
+         * @dev Returns the largest of two numbers.
+         */
+        function max(uint256 a, uint256 b) internal pure returns (uint256) {
+            return a >= b ? a : b;
+        }
+
+        /**
+         * @dev Returns the smallest of two numbers.
+         */
+        function min(uint256 a, uint256 b) internal pure returns (uint256) {
+            return a < b ? a : b;
+        }
+
+        /**
+         * @dev Returns the average of two numbers. The result is rounded towards
+         * zero.
+         */
+        function average(uint256 a, uint256 b) internal pure returns (uint256) {
+            // (a + b) / 2 can overflow, so we distribute
+            return (a / 2) + (b / 2) + ((a % 2 + b % 2) / 2);
+        }
+    }
+    `,
     ready: false,
-    reactions: [],
-    reactionCounts: {}
+    userAddress: ''
   }
   componentDidMount = async () => {
-
+    const addresses = await window.ethereum.enable();
+    const myAddress = addresses[0];
+    this.setState({
+      userAddress: myAddress
+    })
   }
   handleChange = (event) => {
     this.setState({doc: event.target.value})
   }
   render() {
-    const { doc, ready, reactionCounts } = this.state
+    const { doc, ready, userAddress } = this.state
+    let title = false
     return (
     <div className="App">
       <h1>re\u1F4A9tation</h1>
       <h2>🔈 /rɛpjʊˈteɪʃ(ə)n/</h2>
+      <h4>
+      {title && "A concept which can arguably be considered to be a mirror image of currency is a reputation system."}
+      </h4>
       <div>
-        ready: {ready ? 'true' : 'false'}
+        User: { userAddress }
       </div>
-      <textarea name="" id="doc" cols="100" rows="10" onChange={this.handleChange} value={doc} />
+      <textarea name="" id="doc" cols="100" rows="30" onChange={this.handleChange} value={doc} />
       <div>
         <HashPreview doc={doc}/>
         <EmojiBar content={doc}/>
+      </div>
+      <div>
+        <h3>Outlook / Desired Properties / Rules</h3>
+        <ol style={{
+          textAlign: 'left'
+        }}>
+          <li>Multiple votes by one account are not allowed ✅</li>
+          <li>One identity = one account (anti sybil attacks)</li>
+          <li>Non repudiation: bad actors cannot revert or obscure their actions ✅</li>
+        </ol>
       </div>
     </div>
     )
