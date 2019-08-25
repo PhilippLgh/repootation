@@ -1,4 +1,4 @@
-# Re💩tation
+# Re💩tation (Repootation)
 
 >"A concept which can arguably be considered to be a mirror image of currency is a reputation system."
 https://github.com/ethereum/wiki/wiki/Problems#12-reputation-systems
