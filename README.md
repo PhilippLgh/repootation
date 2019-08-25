@@ -7,6 +7,8 @@ Re💩tation (repootation) is a react component ❤️👍👎💩 for fast and 
 Re💩tation uses triples of the form `<content hash><relationship><signature>` that are stored on orbitdb 🛰️ through 3Box.
 With these statements we can construct an entity relationship graph 🌳 and verify all edges between nodes.
 
+![repootation demo gif](assets/repootation.gif)
+
 ## Why?
 Facebook "like buttons"  👍 can be found everywhere on the Internet.
 Without StackOverflow upvotes ⬆️ it could be possible that a lot of software (maybe even Ethereum) would not (yet) exist.
@@ -60,3 +62,5 @@ How can we mitigate bad behavior or incentivize good one?
 
 ## Use Cases
 - Smart contract indicators and badges in remix
+- censorship resistant support buttons
+- 0 tracing

@@ -337,7 +337,7 @@ export default class App extends Component {
         <HashPreview doc={doc}/>
         <EmojiBar content={doc}/>
       </div>
-      <div>
+      <div style={{display: 'none'}}>
         <h3>Outlook / Desired Properties / Rules</h3>
         <ol style={{
           textAlign: 'left'
