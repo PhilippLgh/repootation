@@ -68,9 +68,8 @@ class Storage {
       await this.thread.deletePost(post.postId)
     }
   }
-  async deletePost(post){
-    console.log('delete', post)
-    const result = await this.thread.deletePost(post.postId)
+  async deletePost(post, thread){
+    const result = await thread.deletePost(post.postId)
     console.log('result', result)
   }
   async getPosts(thread){
@@ -116,7 +115,6 @@ class Repoomoji extends Component {
     const { doc, type } = this.props
     const addresses = await window.ethereum.enable();
     const myAddress = addresses[0];
-    console.log('react to content', doc)
     try {
       const hash = shasum(doc)
       const RELATION = type
@@ -165,7 +163,10 @@ const Reaction = (props) => {
   */
   const address = recoverAddress(`${contentHash}${SEPARATOR}${rel}`, signature)
   return (
-    <div>{address} reacted with {typeToEmoji(rel)} - valid: {reaction.hasPenalty ? '❌' : '✅'}</div>
+    <div onClick={async () => {
+      const thread = await storage.getThread(contentHash)
+      storage.deletePost(reaction, thread)}
+    }>{address} reacted with {typeToEmoji(rel)} - valid: {reaction.hasPenalty ? '❌' : '✅'}</div>
   )
 }
 
@@ -184,12 +185,18 @@ class EmojiBar extends Component {
     this.reload()
   }
   fetchReactions = async contentHash => {
+    console.log('fetch reactions')
     // const data = await new Promise((resolve, reject) => box.onSyncDone(resolve))
     // console.log('data', data)
     let posts = []
     if(contentHash){
       await storage.init()
       const thread = await storage.getThread(contentHash)
+      // enable realtime updates -> no way to unsubscribe?
+      thread.onUpdate((update) => {
+        // console.log('received update', update)
+        this.reload()
+      })
       posts = await storage.getPosts(thread)
     }
 
@@ -242,6 +249,7 @@ class EmojiBar extends Component {
     )
   }
   reload = () => {
+    console.log('try to reload')
     const { content } = this.props
     const contentHash = shasum(content)
     this.fetchReactions(contentHash)
@@ -313,13 +321,13 @@ export default class App extends Component {
   }
   render() {
     const { doc, ready, userAddress } = this.state
-    let title = false
+    let title = true
     return (
     <div className="App">
-      <h1>re\u1F4A9tation</h1>
+      <h1>re<span style={{color: 'red'}}>\u1F4A9</span>tation</h1>
       <h2>🔈 /rɛpjʊˈteɪʃ(ə)n/</h2>
       <h4>
-      {title && "A concept which can arguably be considered to be a mirror image of currency is a reputation system."}
+      {title && '"A concept which can arguably be considered to be a mirror image of currency is a reputation system."'}
       </h4>
       <div>
         User: { userAddress }
@@ -335,7 +343,7 @@ export default class App extends Component {
           textAlign: 'left'
         }}>
           <li>Multiple votes by one account are not allowed ✅</li>
-          <li>One identity = one account (anti sybil attacks)</li>
+          <li>One identity = one account (anti sybil attacks) ❌ - not (yet) without central server that validates identity :( </li>
           <li>Non repudiation: bad actors cannot revert or obscure their actions ✅</li>
         </ol>
       </div>
