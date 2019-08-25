@@ -19,9 +19,11 @@ While these reputation concepts are extremely powerful and make it very easy to 
 - they are centrally managed and stored on company servers (reputation can go "out of business", be target of DoS attacks)
 - they are hard to process by other software such as package managers (only download audited modules, display modules with >100 likes)
 
-Ideally, we could express and store relationships of identities to content in a decentralized way.
-Ideally, we would have a format that can be used as metadata and be easily processed by a program.
-Ideally, this information would be agnostic of underlying hosting infrastructure and portable / transferrable.
+Ideally
+- we would own our opinion and it would be censorship resistant
+- we could express and store relationships of identities to content in a decentralized way
+- we would have a format that can be used as metadata and be easily processed by a program.
+- this information would be agnostic of underlying hosting infrastructure and portable / transferrable.
 
 # 💯
 
